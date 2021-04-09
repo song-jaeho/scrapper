@@ -3,22 +3,29 @@ package com.potatosong.service;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 import com.potatosong.model.Article;
+import com.potatosong.repository.ArticleRepository;
 
 @Service
 public class ScrappingService {
 
+	@Autowired
+	private ArticleRepository articleRepository;
+	
 	private final String VELOG_ROOT_URL = "https://velog.io";
 	
 	public List<Article> scrapArticlesByUserId(String userId) throws IOException {
 	
-		List<Article> resultList = new ArrayList<Article>();
+		List<Article> articleList = new ArrayList<Article>();
 		
 		String url = VELOG_ROOT_URL + "/@" + userId;
 		Connection conn = Jsoup.connect(url);
@@ -49,9 +56,6 @@ public class ScrappingService {
 					String articleTitle = null;
 					String articleUserName = null; // 사실 필요 없긴함 velog는 userId가 동일하다
 					String articleCreaetedAt = null;
-					List<String> articleTags = new ArrayList<String>();
-					String articleBodyHtml = null;
-					
 					/*
 					 * 헤더 세팅 스타트
 					 */
@@ -61,37 +65,41 @@ public class ScrappingService {
 						articleTitle = removeHtmlTags(title.toString());
 					}
 					
+					Element information = header.select(".information").first();
+					articleUserName = removeHtmlTags(information.child(0).child(0).toString());
+					articleCreaetedAt = removeHtmlTags(information.child(2).toString());
 					
-					
-					Element tagHeader = header.child(3);
-					tagHeader.children().stream()
-						.forEach(tag -> {
-							String removedTag = removeHtmlTags(tag.toString());
-							if (!removedTag.isBlank()) {
-								articleTags.add(removedTag);								
-							}
-						});
-					
-					Element body = detailPage.select("#root > div").get(1).child(3).child(0).child(0);
-					if (body != null) {
-						articleBodyHtml = body.toString();
-					}
+					String articleBodyHtml = detailPage.select("#root > div").get(1).child(3).child(0).child(0).toString();
+					articleBodyHtml = escapeHtmlTags(articleBodyHtml);
 					
 					Article article = new Article();
 					article.setTitle(articleTitle);
+					article.setCreatedAt(articleCreaetedAt);
 					article.setUserName(articleUserName);
-					article.setCreatedAt(url);
+					article.setBodyHtml(articleBodyHtml);
+					
+					if (!articleRepository.existsByTitleAndUserName(article.getTitle(), article.getUserName())) {
+						articleList.add(article);						
+					}
 					
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
 			});
 				
-		return resultList;
+		return saveUserArticles(articleList);
 	}
 	
-	public String removeHtmlTags(String htmlElement) {
+	private List<Article> saveUserArticles(List<Article> userArticles) {
+		return articleRepository.saveAll(userArticles);
+	}
+	
+	private String removeHtmlTags(String htmlElement) {
 		if (htmlElement == null || htmlElement.length() < 1) return "";
 		return htmlElement.replaceAll("<([^>]+)>", "");
+	}
+	
+	private String escapeHtmlTags(String str) {
+		return HtmlUtils.htmlEscape(str);
 	}
 }
